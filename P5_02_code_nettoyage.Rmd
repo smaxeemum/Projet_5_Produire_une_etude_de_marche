@@ -1,0 +1,432 @@
+---
+title: "Projet 5 - Préparation des données"
+output: html_notebook
+---
+
+#Librairies
+```{r}
+library(tidyverse)
+library(dplyr)
+library(plotly)
+library(readxl)
+library(geosphere)
+```
+
+
+#Préparation des datasets
+```{r}
+#obésité, % des +18ans, 2013
+obesite = read.csv("IN/obesite2013.csv", encoding = "UTF-8")
+obesite2 = subset(obesite, select = c(3, 4, 12))
+obesite3 = obesite2 %>% rename(Code_zone = Code.zone..FAO.,
+                               tx_obe = Valeur)
+rm(obesite2, obesite)
+```
+
+
+```{r}
+population = read.csv("IN/FAOSTAT Popoulation.csv", encoding="UTF-8") #, check.names=T) #Encoding pour les accents, Check.names pour supprimer automatiquement les espaces (inutile)
+
+#Selection des colonnes voulues
+pop_test_2 = subset(population, select = -c(X.U.FEFF.Code.Domaine, Domaine, Code.Produit, Produit, Code.année, Unité, Note)) 
+
+#Nouveau df avec les noms définitifs
+pop_test_3 = pop_test_2 %>% 
+  rename(
+    code_zone = Code.zone..FAO.,
+    code_element = Code.Élément,
+    element = Élément,
+    annee = Année,
+    description_symbole = Description.du.Symbole
+  )
+
+#Selection des seules années 2008 & 2013 pour le calcul de la variation 
+pop2008 = subset(pop_test_3, pop_test_3$annee == 2008)
+pop2010 = subset(pop_test_3, pop_test_3$annee == 2010)
+pop2012 = subset(pop_test_3, pop_test_3$annee == 2012)
+pop2013 = subset(pop_test_3, pop_test_3$annee == 2013)
+pop_ok = rbind(pop2008, pop2013)
+rm(pop_test_2, pop_test_3, pop2008, pop2010, pop2012, pop2013)
+```
+
+
+```{r}
+#Taux d'urbanisation = population urbaine / population totale en 2013
+pop_tot = pop_ok[pop_ok$element == 'Population totale', ]
+pop_tot = pop_tot[pop_tot$annee == 2013, ]
+pop_tot = pop_tot[pop_tot$Symbole == "X", ]
+pop_rur = pop_ok[pop_ok$element == 'Population rurale', ]
+pop_rur = pop_rur[pop_rur$annee == 2013, ]
+pop_rur = pop_rur[pop_rur$Symbole == "X", ]
+
+urbanisation = merge(pop_tot, pop_rur, by = "Zone")
+urbanisation = subset(urbanisation, select = c(1, 2, 4, 6, 7, 11, 13))
+
+urbanisation2 = urbanisation %>% 
+  rename(Code_zone = code_zone.x,
+         pop_tot = Valeur.x,
+         pop_rur = Valeur.y
+  )
+urbanisation2 = subset(urbanisation2, select = -c(3, 5, 6))
+urbanisation2$tx_urb = 1-(urbanisation2$pop_rur / urbanisation2$pop_tot)
+urbanisation2 = subset(urbanisation2, select = c(1,2,5))
+rm(pop_rur, pop_tot, urbanisation)
+```
+
+
+```{r}
+#Calcul de la variation de population entre 2008 et 2013
+pop2008 = pop_ok[pop_ok$element == 'Population totale', ]
+pop2008 = pop2008[pop2008$annee == 2008, ]
+pop2008 = pop2008[pop2008$Symbole == 'X', ]
+pop2008 = subset(pop2008, select = c(1, 2, 6))
+pop2008 = pop2008 %>% rename(pop2008 = Valeur)
+
+pop2013 = pop_ok[pop_ok$element == 'Population totale', ]
+pop2013 = pop2013[pop2013$annee == 2013, ]
+pop2013 = pop2013[pop2013$Symbole == 'X', ]
+pop2013 = subset(pop2013, select = c(1, 2, 6))
+pop2013 = pop2013 %>% rename(pop2013 = Valeur)
+
+varpop = merge(pop2008, pop2013, by = "code_zone")
+varpop$var_pop_tot = ((varpop$pop2013 - varpop$pop2008) / varpop$pop2008)*100
+varpop = subset(varpop, select = c(1, 2, 6))
+varpop = varpop %>% rename(Zone = Zone.x)
+dataset_pop_3 = varpop
+rm(pop2008, pop2013, varpop)
+```
+
+
+```{r eval=FALSE, include=FALSE}
+#Pivot autour de la zone pour avoir les années 
+pop_pivot = pop_ok %>%
+  group_by(Zone, annee, element) %>%
+  summarize(sum_by_year = sum(Valeur))
+
+# Pivot autour des valeurs années pour le calcul de variation entre 2008 et 2013
+pop_ok_spread = spread(pop_ok, annee, Valeur)
+#OU
+pop_ok_spread_2 = pop_ok %>%
+  pivot_wider(names_from = c(annee, element), values_from = Valeur, values_fill = 0)
+
+#Calcul du taux de variation pop totale, rurale & urbaine en %
+pop_ok_spread_3 = pop_ok_spread %>%
+  mutate(var_pop_tot = ((pop_ok_spread_2$'2013_Population totale' - pop_ok_spread_2$'2008_Population totale') / pop_ok_spread_2$'2008_Population totale') * 100, 
+         var_pop_rur = ((pop_ok_spread_2$'2013_Population rurale' - pop_ok_spread_2$'2008_Population rurale') / pop_ok_spread_2$'2008_Population rurale') * 100, 
+         var_pop_urb = ((pop_ok_spread_2$'2013_Population urbaine' - pop_ok_spread_2$'2008_Population urbaine') / pop_ok_spread_2$'2008_Population urbaine') * 100)#, 
+         #tx_urb = (pop_ok_spread_2$'2013_Population urbaine' / pop_ok_spread_2$'2013_Population totale'))
+
+#On supprime les données agrégées (symbole A : Chine & Indes nééerlandaises)
+pop_spread_4 = subset(pop_ok_spread_3, pop_ok_spread_3$Symbole == "X")
+pop_spread_4 = subset(pop_spread_4, select = -c(description_symbole, Symbole))
+#pop_spread_4[is.na(pop_spread_4)] <- 0
+rm(pop_ok, pop_ok_spread, pop_ok_spread_2, pop_ok_spread_3, pop_pivot)
+
+#TEST
+pop_tot = subset(pop_spread_4, select = c(code_zone, Zone, var_pop_tot))
+
+dataset_pop_3<-pop_tot[complete.cases(pop_tot),]
+
+rm(pop_spread_4, pop_tot)
+```
+
+
+```{r}
+#Pour la variable PIB 2013
+pib_2013 = read.csv("IN/PIB_2013.csv", encoding="UTF-8")
+PIB = subset(pib_2013, select =-c(X.U.FEFF.Code.Domaine, Domaine, Code.Produit, Produit, Code.ann.e, Ann.e, Note))
+PIB_2 = subset(PIB, PIB$Symbole == "X")
+PIB_3 = PIB_2 %>% 
+  rename(code_zone = Code.zone..FAO.,
+         code_element = Code..l.ment,
+         element = X.l.ment,
+         unite = Unit.,
+         description_symbole = Description.du.Symbole
+  )
+PIB_pivot = PIB_3 %>%
+  group_by(Zone, code_zone, element) %>%
+  summarize(sum_by_year = sum(Valeur))
+
+PIB_spread = spread(PIB_3, element, Valeur)
+colnames(PIB_spread)
+PIB_spread_2 = PIB_spread %>%
+  rename(PIB_M_USD = 'Valeur US $',
+         PIB_cap_USD = 'Valeur US $ par habitant'
+    
+  )
+
+PIB_spread_cap = subset(PIB_spread_2, select = c(code_zone, Zone, PIB_cap_USD))
+PIB_spread_USD = subset(PIB_spread_2, select = c(code_zone, Zone, PIB_M_USD))
+
+PIB_spread_cap_2<-PIB_spread_cap[complete.cases(PIB_spread_cap),]
+PIB_spread_USD_2<-PIB_spread_USD[complete.cases(PIB_spread_USD),]
+
+dataset_PIB = merge(x = PIB_spread_cap_2, y = PIB_spread_USD_2, by = "code_zone")
+
+dataset_PIB_2 = subset(dataset_PIB, select = -c(Zone.y))
+names(dataset_PIB_2)[names(dataset_PIB_2) == "Zone.x"] <- "Zone"
+rm(dataset_PIB, PIB, PIB_2, PIB_3, PIB_pivot, PIB_spread, PIB_spread_2, PIB_spread_cap, PIB_spread_cap_2, PIB_spread_USD, PIB_spread_USD_2)
+
+dataset_pop_pib = merge(x = dataset_pop_3, y = dataset_PIB_2, by = "code_zone")
+dataset_pop_pib_2 = subset(dataset_pop_pib, select = -c(Zone.y))
+names(dataset_pop_pib_2)[names(dataset_pop_pib_2) == "Zone.x"] <- "Zone"
+rm(dataset_PIB_2, dataset_pop_3, dataset_pop_pib, pib_2013)
+```
+
+
+```{r}
+#Test animaux, vegetaux & poulet
+animaux_test = read.csv("IN/P5_animaux.csv", encoding = "UTF-8")
+vegetaux_test = read.csv("IN/P5_vegetaux.csv", encoding = 'UTF-8')
+
+animaux_test$origine = "animal"
+vegetaux_test$origine = "vegetaux"
+
+alim_2 = rbind(animaux_test, vegetaux_test)
+alim_2 = subset(alim_2, select = -c(X.U.FEFF.Code.Domaine, Domaine, Code..l.ment, Code.Produit, Code.ann.e, Ann.e, Symbole, Description.du.Symbole ))
+
+names(alim_2)[1] <- 'Code_zone'
+names(alim_2)[3] <- 'Élément'
+names(alim_2)[5] <- 'Unité'
+
+```
+
+
+```{r}
+#Suite test data volailles
+
+data_poulet_test = subset(alim_2, alim_2$Produit == "Viande de Volailles" | alim_2$Produit == 'Oeufs' )
+oeufs_test = subset(data_poulet_test, data_poulet_test$Produit == 'Oeufs' )
+volaille_test = subset(data_poulet_test, data_poulet_test$Produit == "Viande de Volailles" )
+oeufs_test$Valeur <- oeufs_test$Valeur * 1000
+volaille_test$Valeur <- volaille_test$Valeur * 1000
+
+oeufs_pivot_test = oeufs_test %>%
+  group_by(Élément, Code_zone, Zone) %>%
+  summarize(total = sum(Valeur))
+
+oeufs_prod_test = subset(oeufs_pivot_test, oeufs_pivot_test$Élément == "Production")
+names(oeufs_prod_test)[4] <- 'prod_oeufs'
+
+oeuf_disp_int_test = subset(oeufs_pivot_test, oeufs_pivot_test$Élément == "Disponibilit? int?rieure")
+names(oeuf_disp_int_test)[4] <- 'disp_int_oeufs'
+
+oeufs_import_test = subset(oeufs_pivot_test, oeufs_pivot_test$Élément == "Importations - Quantit?")
+names(oeufs_import_test)[4] <- 'import_oeufs'
+
+data_oeufs_test = merge(oeufs_prod_test, oeuf_disp_int_test, by = "Code_zone")
+data_oeufs_test = merge(data_oeufs_test, oeufs_import_test, by = "Code_zone")
+data_oeufs_test = subset(data_oeufs_test, select = -c(Élément.x, Zone.x, Élément.y, Zone.y, Élément))
+
+volaille_pivot_test = volaille_test %>%
+  group_by(Élément, Code_zone, Zone) %>%
+  summarize(total = sum(Valeur))
+
+volaille_prod_test = subset(volaille_pivot_test, volaille_pivot_test$Élément == "Production")
+names(volaille_prod_test)[4] <- 'prod_volaille'
+
+volaille_disp_int_test = subset(volaille_pivot_test, volaille_pivot_test$Élément == "Disponibilit? int?rieure")
+names(volaille_disp_int_test)[4] <- 'disp_int_volaille'
+
+volaille_import_test = subset(volaille_pivot_test, volaille_pivot_test$Élément == "Importations - Quantit?")
+names(volaille_import_test)[4] <- 'import_volaille'
+
+data_volaille_test = merge(volaille_prod_test, volaille_disp_int_test, by = "Code_zone")
+data_volaille_test = merge(data_volaille_test, volaille_import_test, by = "Code_zone")
+data_volaille_test = subset(data_volaille_test, select = -c(Élément.x, Zone.x, Élément.y, Zone.y, Élément))
+```
+
+```{r}
+#Test calcul des variables
+alim_pivot_test = alim_2 %>%
+  group_by(Zone, Code_zone, origine, Élément) %>%
+  summarize(total = sum(Valeur))
+
+alim_pivot_test$total_tete_an <- alim_pivot_test$total * 365
+
+animal_test = subset(alim_pivot_test, alim_pivot_test$origine == "animal")
+vegetal_test = subset(alim_pivot_test, alim_pivot_test$origine == "vegetaux")
+
+# Calcul de la variable "disp_alim_kcal_hab"
+animaux_2_test = animal_test %>%
+  group_by(Zone, Code_zone, origine, Élément) %>%
+  summarize(total = sum(total))
+
+animaux_2_test = subset(animaux_2_test, animaux_2_test$Élément == "Disponibilit? alimentaire (Kcal/personne/jour)")
+names(animaux_2_test)[names(animaux_2_test) == "total"] <- "disp_alim_kcal_pers_j_anim"
+
+vegetaux_2_test = vegetal_test %>%
+  group_by(Zone, Code_zone, origine, Élément) %>%
+  summarize(total = sum(total))
+
+vegetaux_2_test = subset(vegetaux_2_test, vegetaux_2_test$Élément == "Disponibilit? alimentaire (Kcal/personne/jour)")
+names(vegetaux_2_test)[names(vegetaux_2_test) == "total"] <- "disp_alim_kcal_pers_j_veg"
+
+#Merge & Selection des colonnes
+alim_disp_kcal_test = merge(animaux_2_test, vegetaux_2_test, by = "Code_zone")
+alim_disp_kcal_test = subset(alim_disp_kcal_test, select = -c(origine.x, Élément.x, origine.y, Élément.y))
+
+#Calcul de la variable en additionnant animal & vegetal
+alim_disp_kcal_test$'disp_alim_kcal_pers_j_totale' <- alim_disp_kcal_test$'disp_alim_kcal_pers_j_anim' + alim_disp_kcal_test$'disp_alim_kcal_pers_j_veg'
+
+# Calcul de la variable  "disp_alim_prot_hab
+animaux_prot_test = animal_test %>%
+  group_by(Zone, Code_zone, origine, Élément) %>%
+  summarize(total = sum(total))
+
+animaux_prot_test = subset(animaux_prot_test, animaux_prot_test$Élément == "Disponibilit? de prot?ines en quantit? (g/personne/jour)")
+names(animaux_prot_test)[names(animaux_prot_test) == "total"] <- "disp_prot_pers_j_anim"
+
+vegetaux_prot_test = vegetal_test %>%
+  group_by(Zone, Code_zone, origine, Élément) %>%
+  summarize(total = sum(total))
+vegetaux_prot_test = subset(vegetaux_prot_test, vegetaux_prot_test$Élément == "Disponibilit? de prot?ines en quantit? (g/personne/jour)")
+names(vegetaux_prot_test)[names(vegetaux_prot_test) == "total"] <- "disp_prot_pers_j_veg"
+
+alim_disp_prot_test = merge(animaux_prot_test, vegetaux_prot_test, by = "Code_zone")
+alim_disp_prot_test = subset(alim_disp_prot_test, select = -c(origine.x, Élément.x, origine.y, Zone.y, Élément.y))
+
+alim_disp_prot_test$'disp_alim_prot_g_pers_j_total' <- alim_disp_prot_test$'disp_prot_pers_j_anim' + alim_disp_prot_test$'disp_prot_pers_j_veg'
+
+```
+
+```{r}
+#Calcul de la variable ratio "prot animales / prot totales"
+alim_total_test = merge(alim_disp_kcal_test, alim_disp_prot_test, by = "Code_zone")
+alim_total_test$'ratio_prot_anim_total' <- alim_total_test$'disp_prot_pers_j_anim'/ alim_total_test$'disp_alim_prot_g_pers_j_total' * 100
+alim_total_test = subset(alim_total_test, select = -c(Zone.y, Zone.x.y))
+rm(alim_2, alim_disp_kcal_test, alim_disp_prot_test, alim_pivot_test, animal_test, animaux_2_test, animaux_prot_test, animaux_test, data_poulet_test, oeuf_disp_int_test, oeufs_import_test, oeufs_pivot_test, oeufs_prod_test, oeufs_test, population, vegetal_test, vegetaux_2_test, vegetaux_prot_test, vegetaux_test, volaille_disp_int_test, volaille_import_test, volaille_pivot_test, volaille_prod_test, volaille_test)
+```
+
+
+```{r}
+#Distances
+codes_iso = read_excel('IN/codes_iso3.xlsx') #récupération des codes ISO3
+codes_iso_fr = read_excel('IN/ISO3.xlsx') #récupération des codes ISO3 avec les noms des pays français (accents ect)
+capitales = read_excel('IN/capitales.xlsx') #récupération des positions absolues des capitales
+capitales$Longitude = as.numeric(as.character(capitales$Longitude)) #transformation de la longitude en nombre
+capitales$Latitude = as.numeric(as.character(capitales$Latitude))  #transformation de la latitude en nombre
+codes_iso_ok = merge(codes_iso, codes_iso_fr, by = 'ISO3') #réunion des 2 codes ISO : international & fr
+codes_iso_ok = subset(codes_iso_ok, select = c('ISO3', 'Country.x', 'Country.y')) #On ne garde que les colonnes interessantes : code ISO, pays en, pays fr
+codes_iso_ok = codes_iso_ok %>% 
+  rename(
+    Country = Country.x
+    ) #on renomme la colonne country.x en country pour les merge qui suivront
+
+write.csv(codes_iso_ok,"OUT/codes_iso_ok.csv", row.names = FALSE, fileEncoding = "UTF-8")
+
+distances_ok = merge(capitales, codes_iso_ok, by = "Country") #On réunit les dataframe capitales & codes iso sur la colonne country en
+coord_fr = c(2.352222, 48.856614) #On isole les coordonnées retenues pour la France (Paris)
+distance_test = distances_ok #Copie du dataframe distance_ok
+distance_test <- distance_test[, c("Country", "Country.y", "ISO3", "Capital", "Longitude", "Latitude")] #On réordonne les colonnes
+distance_test = subset(distance_test, select = c('Country.y', 'Longitude', 'Latitude')) #On ne garde que les colonnes pays fr, longitude & latitude
+distance_test = distance_test %>% 
+  rename(
+    Country = Country.y
+    ) #on renomme la colonne country.y en country pour les merge qui suivront
+
+distance_test$dist_fr = distances_ok %>%
+  rowwise() %>%
+  mutate(distance_test = distHaversine(coord_fr, c(Longitude, Latitude))) #On fait la distance haversine rowwise via dyplr mais duplication de nombreuses colonnes
+
+#Pour les duplications  : on sauvegarde et récupère les dataframes pour effacer les colonnes ensuite
+write.csv(distance_test,"OUT/distances_test.csv", row.names = FALSE, fileEncoding = "UTF-8")
+write.csv(distances_ok, "OUT/distances_ok", row.names = FALSE, fileEncoding = "UTF-8")
+rm(distance_test, distances_ok)
+distance_test = read_csv("OUT/distances_test.csv")
+distance_ok = read_csv("OUT/distances_ok")
+distance_ok = subset(distance_ok, select = c("Country.y", "ISO3", "Longitude", "Latitude"))
+distance_ok = distance_ok %>% 
+  rename(
+    Country = Country.y
+  )
+distance_test = subset(distance_test, select = c("Country", "dist_fr.distance_test"))
+rm(capitales, codes_iso, codes_iso_fr)
+
+distances_tot = merge(distance_test, distance_ok, by = 'Country')
+distances_tot = subset(distances_tot, select = c("Country", "dist_fr.distance_test", "ISO3"))
+distances_tot$dist_fr_km = distances_tot$dist_fr.distance_test/1000
+distances_tot = subset(distances_tot, select = c("Country", "ISO3", "dist_fr_km"))
+distances_tot = distances_tot %>% 
+  rename(
+    Zone = Country
+  )
+
+rm(distance_ok, distance_test, coord_fr)
+
+```
+
+```{r}
+names(dataset_pop_pib_2)[names(dataset_pop_pib_2) == 'code_zone'] <- 'Code_zone'
+dataset_pop_pib_2[35, 2] = "Chine"
+
+dataset_pop_pib_2[191, 2] = "USA"
+distances_tot[55, 1] = "USA"
+
+dataset_pop_pib_2[189, 2] = "UK"
+distances_tot[154, 1] = "UK"
+
+data_1_test = merge(dataset_pop_pib_2, distances_tot, by = "Zone")
+
+data_2_test = merge(data_volaille_test, data_oeufs_test, by = "Code_zone" )
+
+data_3_test = merge(data_1_test, data_2_test, by = "Code_zone")
+data_3_test = subset(data_3_test, select = -c(Zone.x, Zone.y))
+
+data_4_test = merge(data_3_test, alim_total_test, by = "Code_zone")
+data_4_test = subset(data_4_test, select = -c(Zone.x.x))
+data_5_test <- data_4_test[, c(1, 2, 6, 3, 4, 5, 7, 8, 9, 10 ,11, 12, 13, 14, 15, 16, 17, 18, 19, 20)]
+
+rm(alim_total_test, data_1_test, data_2_test, data_3_test, data_4_test, data_oeufs_test, data_volaille_test, dataset_pop_pib_2, distances_tot)
+```
+
+
+
+```{r}
+#Calcul de variables complémentaires
+#taux de dépendance aux importations : rapport entre les importations et la disponibilité intérieure du pays 
+#taux d'autosuffisance : production, par rapport à la disponibilité intérieure du pays 
+data_5_test$dependance_import_oeufs = data_5_test$import_oeufs / data_5_test$disp_int_oeufs
+data_5_test$autosuf_oeufs = data_5_test$prod_oeufs/data_5_test$disp_int_oeufs
+
+data_5_test$dependance_import_volaille = data_5_test$import_volaille / data_5_test$disp_int_volaille
+data_5_test$autosuf_volaille = data_5_test$prod_volaille/data_5_test$disp_int_volaille
+
+#Données manquantes pour la dispo intérieure des oeufs : 
+data_6_test = data_5_test[-c(6, 34, 49, 113), ] #143 rows
+```
+
+
+```{r}
+#Variables complémentaires
+obesite3[152, 2] = "UK"
+obesite3[57, 2] = "USA"
+
+urbanisation2[65, 1] = "USA"
+urbanisation2[43, 1] = "Chine"
+urbanisation2[185, 1] = "UK"
+
+data_6_test = merge(data_6_test, obesite3, by = "Zone")
+data_6_test = merge(data_6_test, urbanisation2, by = "Zone")
+data_6_test = subset(data_6_test, select = -c(2, 25))
+```
+
+
+```{r}
+data_7_test = data_6_test[!duplicated(data_6_test$Code_zone), ]
+rownames( data_7_test ) <- NULL
+dataset_full = data_7_test %>% column_to_rownames(., var = "Zone")
+write.csv(data_7_test,"OUT/dataset_final_full.csv", row.names = TRUE)
+
+dataset_short = subset(data_7_test, select = c(1,2,3,4,5, 6, 15, 18, 19, 20, 21, 22, 23, 24, 25, 26))
+write.csv(dataset_short,"OUT/dataset_final_short.csv", row.names = TRUE)
+
+rm(data_5_test, data_7_test)
+rm(obesite3, urbanisation2)
+```
+
+
+```{r}
+rm(data_6_test)
+```
+

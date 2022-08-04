@@ -1,0 +1,719 @@
+---
+title: "P5 - Analyse"
+output: html_notebook
+---
+
+#Analyse 
+
+```{r}
+#Import des bibliothèques
+
+library("FactoMineR")
+library("factoextra")
+
+library(ape)
+library(plotly)
+
+library(ClusterR)
+library(cluster)
+library(ggpubr)
+
+library(dendextend)
+library(heatmaply)
+library(ggcorrplot)
+library(caret)
+library(geosphere)
+library(readxl)
+library(RColorBrewer)
+library(tidyverse)
+library(corrplot) 
+
+library("Hmisc")
+```
+
+```{r}
+#Import des datasets 
+
+data_short = read.csv("OUT/dataset_final_short.csv")
+
+
+#dist_fr_ok = read.csv("C:/Users/maxim/Desktop/Formation Data Analyst/Projet 5/dataframes/distance_fr_ok.csv")
+#data_short_test = merge(data_short, dist_fr_ok, by = 'ISO3')
+#data_short = subset(data_short_test, select = c(3, 4, 5, 8, 9, 10, 18)) #13, 14, 15, 17, 
+
+# [1] "X"                            [2] "Zone"                        [3] "ISO3"                         
+# [4] "var_pop_tot"                 [5] "PIB_cap_USD"                   [6] "PIB_M_USD"                    
+# [7] "dist_fr_km"                    [8] "disp_alim_kcal_pers_j_totale"  [9] "disp_alim_prot_g_pers_j_total"
+# [10] "ratio_prot_anim_total"        [11] "dependance_import_oeufs"      [12] "autosuf_oeufs"                
+# [13] "dependance_import_volaille"   [14] "autosuf_volaille"             [15] "tx_obe"                       
+# [16] "Code_zone"                    [17] "tx_urb"
+
+#data_short = subset(data_short, select = c(2, 4, 5, 7, 8, 9, 10)) #<-- 74.7% de couverture : OK
+#data_short = subset(data_short, select = c(2, 4, 5, 7, 8, 9, 10, 15, 17)) #<--68.8% de couverture : OK
+#data_short = subset(data_short, select = c(2, 4, 5, 7, 8, 9, 10, 13 ,14)) #<-- 64.6% de couverture : OK
+#data_short = subset(data_short, select = c(2, 4, 5, 7, 8, 9, 10, 14, 17)) #<-- 65.5% de couverture : OK
+#data_short = subset(data_short, select = c(2, 4, 5, 7, 8, 9, 10, 15, 17)) #<-- 68.8 % de couverture : OK
+#data_short = subset(data_short, select = c(2, 4, 5, 7, 8, 9, 10, 13, 14, 15, 17)) #<-- 61.5% de taux de couverture : OK
+#data_short = subset(data_short, select = c(2, 4, 5, 7, 8, 9, 10, 14 )) #<-- 66.5% de couverture :OK
+#data_short = subset(data_short, select = c(2, 4, 5, 7, 8, 9, 10, 13, 17)) #<--64.7 de couverture :OK
+#data_short = subset(data_short, select = c(2, 4, 5, 7, 8, 9, 10, 14, 17)) #<--65.5 de couverture :OK
+#data_short = subset(data_short, select = c(2, 4, 5, 8, 9, 10)) 
+#data_short = subset(data_short, select = c(2, 4, 5, 8, 9, 10, 13, 14)) #<-- 70.7% de couverture : OK
+
+
+data_short = subset(data_short, select = c(2, 4, 5, 7, 8, 9, 10, 17)) #<--72.1% de couverture : OK
+#data_short = subset(data_short, select = c(2, 4, 5, 8, 9, 10, 15, 17)) #<-- 75,1% de couverture : OK
+
+data_short = data_short %>% column_to_rownames(., var = "Zone")
+
+codes_iso_ok = read.csv("OUT/codes_iso_ok.csv", encoding = 'UTF-8')
+names(codes_iso_ok) = c('ISO', 'Country', 'Zone')
+codes_iso_ok[39, 3] = "Chine"
+codes_iso_ok[212, 3] = "USA"
+codes_iso_ok[73, 3] = "UK"
+```
+
+
+```{r}
+describe(data_short, "data_short", exclude.missing=TRUE,
+    digits=4)
+```
+
+
+```{r}
+#Matrice des corrélations
+# Calcul de la matrice
+corr <- round(cor(data_short), 1)
+
+# Calcul de la matrice de p-values de corrélation
+p.mat <- cor_pmat(data_short)
+
+# Visualiser le triangle inférieur de la matrice de corrélation
+# Barrer les coefficients non significatifs
+corr.plot <- ggcorrplot(
+  corr, hc.order = TRUE, type = "lower", outline.col = "white",
+  p.mat = p.mat
+)
+#corr.plot
+ggplotly(corr.plot)
+dev.copy(png,'PLOTS/1_heatmap_1.png')
+dev.off()
+rm(corr, p.mat, corr.plot)
+```
+
+
+```{r}
+data = data_short
+data_scale <- scale(data)
+
+d <- dist(data_scale, method = "euclidean")
+
+data.hc <- hclust(d, method = "ward.D2")
+
+groupes.hc <- cutree(data.hc, k = 5)
+
+table(groupes.hc)
+
+rownames(data_scale)[groupes.hc == 5]
+
+dendr_color = fviz_dend(data.hc, k = 5,
+                cex = 0.4,
+                palette = "Set1",
+                rect = TRUE, 
+                rect_fill = TRUE,
+                rect_border = "Set1", 
+                labels_track_height = 0.4)
+
+
+plot(dendr_color)
+
+dev.copy(png,'PLOTS/2_dendrogramme.png')
+dev.off()
+```
+
+```{r}
+#Liste des pays dans les clusters
+#groupes.hc.test <- cutree(hc_test, k = 5)
+#table(groupes.hc.test)
+cluster1 = rownames(data_short)[groupes.hc == 1]
+cluster2 = rownames(data_short)[groupes.hc == 2]
+cluster3 = rownames(data_short)[groupes.hc == 3]
+cluster4 = rownames(data_short)[groupes.hc == 4]
+cluster5 = rownames(data_short)[groupes.hc == 5]
+
+pays <- rownames(data_short)
+data <- cbind(pays,data_short)
+
+# On rajoute le numéro du cluster de chaque pays
+data_short_clust = data_short
+data_short_clust$cluster[pays %in% cluster1] <- 1
+data_short_clust$cluster[pays %in% cluster2] <- 2
+data_short_clust$cluster[pays %in% cluster3] <- 3
+data_short_clust$cluster[pays %in% cluster4] <- 4
+data_short_clust$cluster[pays %in% cluster5] <- 5
+
+#rm(cluster1, cluster2, cluster3, cluster4, cluster5, pays, data)
+```
+
+
+```{r}
+carte_clust_test_2 <- plot_ly()
+carte_clust_test_2 <- carte_clust_test_2 %>% add_trace(data_clust_iso, 
+            type='choropleth', 
+            locations=data_clust_iso$ISO, 
+            z=data_clust_iso$cluster, 
+            text=data_clust_iso$Zone, 
+            color = data_clust_iso$cluster)
+fig = carte_clust_test_2
+fig
+orca(carte_clust_test_2, "PLOTS/carte_clust_2.png")
+
+plotly_IMAGE(carte_clust_test_2, width = 500, height = 500, format = "png", scale = 2,
+             out_file = "PLOTS/carte_clusters.png")
+```
+
+
+```{r}
+#merge data_short_clust & dataset_short pour récupérer les ISO3
+
+data_short_clust_iso = data_short_clust
+data_short_clust_iso <- tibble::rownames_to_column(data_short_clust_iso, "Zone")
+data_clust_iso = merge(data_short_clust_iso, codes_iso_ok, by = "Zone")
+
+
+carte_clust_test <- plot_ly(data_clust_iso, type='choropleth', locations=data_clust_iso$ISO, z=data_clust_iso$cluster, text=data_clust_iso$Zone, color = data_clust_iso$cluster )
+carte_clust_test
+
+dev.copy(png,'PLOTS/3_carte_clusters.png')
+dev.off()
+```
+
+```{r}
+#Test visualisation des clusters
+set.seed(123)
+data = data_short
+
+# K-means clustering
+# +++++++++++++++++++++
+km.res <- kmeans(data_scale, 5, nstart = 10)
+
+# Visualize kmeans clustering
+# use repel = TRUE to avoid overplotting
+fviz_cluster(km.res, data, ellipse.type = "norm", palette = "Set2", ggtheme = theme_minimal(), repel = TRUE)
+```
+
+```{r}
+#Calcul des centroides : moyenne des variables par clusters
+test_centroides = aggregate(data_short_clust[, 1:8], list(data_short_clust$cluster), mean)
+print(test_centroides)
+```
+
+```{r}
+#Coordonnées des centroides : ACP puis extraction des coordonnées
+test_centroides = subset(test_centroides, select = -c(1,9))
+test_centroides_pca = PCA(test_centroides, graph = FALSE)
+test_centroides_pca_var = get_pca_var(test_centroides_pca)
+print(test_centroides_pca_var$coord)
+```
+
+```{r}
+#représentation graphique des centroides
+
+fviz_pca_ind(test_centroides_pca,
+             geom.ind = "text", # Montre les points seulement (mais pas le "text")
+            # col.ind = data_short_clust$cluster, # colorer by groups
+             palette = "Set2",
+             addEllipses = FALSE, 
+             #ellipse.type = "confidence", # Ellipses de confiance, concentration si non spécifié
+             legend.title = "Clusters"
+             )
+fviz_eig(test_centroides_pca, addlabels = TRUE, ylim = c(0, 90))
+#Cos2: qualité de répresentation
+corrplot(test_centroides_pca_var$cos2, is.corr=TRUE)
+fviz_cos2(test_centroides_pca, choice = "var", axes = 1)
+fviz_cos2(test_centroides_pca, choice = "var", axes = 2)
+fviz_cos2(test_centroides_pca, choice = "var", axes = 1:2)
+```
+
+
+```{r}
+colnames(data_short_clust)
+```
+
+```{r}
+fig_var_pop <- data_short_clust %>%
+  plot_ly(x = ~cluster, y = ~var_pop_tot, split = ~cluster, type = 'violin', box = list(visible = T), meanline = list(visible = T)) 
+fig_var_pop <- fig_var_pop %>%
+  layout(xaxis = list(title = "Cluster"), yaxis = list(title = "Variation de la population 2008-13, %", zeroline = F))
+fig_var_pop
+```
+
+
+```{r}
+fig_PIB <- data_short_clust %>%
+  plot_ly(x = ~cluster, y = ~PIB_cap_USD, split = ~cluster, type = 'violin', box = list(visible = T), meanline = list(visible = T)) 
+fig_PIB <- fig_PIB %>%
+  layout(xaxis = list(title = "Cluster"), yaxis = list(title = "PIB par tête, USD", zeroline = F))
+fig_PIB
+```
+
+
+```{r}
+disp_alim_kcal <- data_short_clust %>%
+  plot_ly(x = ~cluster, y = ~disp_alim_kcal_pers_j_totale, split = ~cluster, type = 'violin', box = list(visible = T), meanline = list(visible = T)) 
+disp_alim_kcal <- disp_alim_kcal %>%
+  layout(xaxis = list(title = "Cluster"), yaxis = list(title = "Disponibilité alimentaire en kcal par personne & par jour", zeroline = F))
+disp_alim_kcal
+```
+
+
+```{r}
+disp_alim_prot <- data_short_clust %>%
+  plot_ly(x = ~cluster, y = ~disp_alim_prot_g_pers_j_total, split = ~cluster, type = 'violin', box = list(visible = T), meanline = list(visible = T)) 
+disp_alim_prot <- disp_alim_prot %>%
+  layout(xaxis = list(title = "Cluster"), yaxis = list(title = "Disponibilité alimentaire en g de protéines par personne & par jour", zeroline = F))
+disp_alim_prot
+```
+
+```{r}
+ratio <- data_short_clust %>%
+  plot_ly(x = ~cluster, y = ~ratio_prot_anim_total, split = ~cluster, type = 'violin', box = list(visible = T), meanline = list(visible = T)) 
+ratio <- ratio %>%
+  layout(xaxis = list(title = "Cluster"), yaxis = list(title = "Part de protéines animales dans la disponibilité totale de protéines", zeroline = F))
+ratio
+```
+
+```{r}
+dist_fr <- data_short_clust %>%
+  plot_ly(x = ~cluster, y = ~dist_fr_km, split = ~cluster, type = 'violin', box = list(visible = T), meanline = list(visible = T)) 
+dist_fr <- dist_fr %>%
+  layout(xaxis = list(title = "Cluster"), yaxis = list(title = "Distance depuis la France en km", zeroline = F))
+dist_fr
+```
+
+
+```{r}
+tx_urb <- data_short_clust %>%
+  plot_ly(x = ~cluster, y = ~tx_urb, split = ~cluster, type = 'violin', box = list(visible = T), meanline = list(visible = T)) 
+tx_urb <- tx_urb %>%
+  layout(xaxis = list(title = "Cluster"), yaxis = list(title = "Taux d'urbanisation", zeroline = F))
+tx_urb
+```
+
+
+```{r}
+heatmaply_cor(
+  cor(data_short),
+  xlab = "Features", 
+  ylab = "Features",
+  k_col = 2, 
+  k_row = 2
+)
+```
+
+
+```{r}
+# Calculer les coefficients de corrélation
+cor.coef <- cor(data_short)
+
+# Calculer les p-values de corrélation
+cor.test.p <- function(x){
+    FUN <- function(x, y) cor.test(x, y)[["p.value"]]
+    z <- outer(
+      colnames(x), 
+      colnames(x), 
+      Vectorize(function(i,j) FUN(x[,i], x[,j]))
+    )
+    dimnames(z) <- list(colnames(x), colnames(x))
+    z
+}
+p <- cor.test.p(data_short)
+
+# Créer la Heatmap
+heatmaply_cor(
+  cor.coef,
+  k_col = 2, 
+  k_row = 2,
+  node_type = "scatter",
+  point_size_mat = -log10(p), 
+  point_size_name = "-log10(p-value)", #on log pour ramener les chiffres entre 0 et 1 pour faciliter l'interprétation & les ordres de grandeur 
+  label_names = c("x", "y", "Correlation")
+)
+```
+
+
+# ACP
+
+```{r}
+data_short_pca = PCA(data_short, graph = FALSE)
+data_short_pca_var = get_pca_var(data_short_pca)
+data_short_pca_ind = get_pca_ind(data_short_pca)
+```
+
+
+```{r}
+# Coordonnées
+head(data_short_pca_var$coord)
+# Cos2: qualité de répresentation
+head(data_short_pca_var$cos2)
+# Contributions aux composantes principales
+head(data_short_pca_var$contrib)
+```
+
+```{r}
+# Coordonnées
+head(data_short_pca_ind$coord)
+# Cos2: qualité de répresentation
+head(data_short_pca_ind$cos2)
+# Contributions aux composantes principales
+head(data_short_pca_ind$contrib)
+```
+
+
+```{r}
+fviz_eig(data_short_pca, addlabels = TRUE, ylim = c(0, 90))
+```
+
+
+
+```{r}
+#Cos2: qualité de répresentation
+corrplot(data_short_pca_var$cos2, is.corr=TRUE)
+fviz_cos2(data_short_pca, choice = "var", axes = 1)
+fviz_cos2(data_short_pca, choice = "var", axes = 2)
+fviz_cos2(data_short_pca, choice = "var", axes = 1:2)
+```
+
+```{r}
+# Colorer en fonction du cos2: qualité de représentation
+fviz_pca_var(data_short_pca, 
+             title='Cercle de corrélation',
+             col.var = "cos2",
+             #alpha.var = "cos2", # Changer la transparence en fonction du cos2
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE # Évite le chevauchement de texte
+             )
+fviz_pca_var(data_short_pca,
+             title='Cercle de corrélation',
+             col.var = "cos2",
+             gradient.cols =  c("#00AFBB", "#E7B800", "#FC4E07"),
+             geom=c('arrow', 'text'), # point
+             labelsize = 3,
+             repel = TRUE
+)
+fviz_pca_var(data_short_pca,
+             title='Cercle de corrélation',
+             col.var = "cos2",
+             gradient.cols =  c("#00AFBB", "#E7B800", "#FC4E07"),
+             geom=c('point', 'text'), # point
+             labelsize = 3,
+             repel = TRUE
+)
+fviz_pca_var(data_short_pca,
+             title='Cercle de corrélation',
+             col.var = "cos2",
+             select.var=list(cos2 = 0.5),
+             gradient.cols =  c("#00AFBB", "#E7B800", "#FC4E07"),
+             geom=c('point', 'text'), # point
+             labelsize = 3,
+             repel = TRUE
+)
+```
+
+
+
+```{r}
+# Contributions des variables à PC1
+fviz_contrib(data_short_pca, choice = "var", axes = 1, top = 10)
+# Contributions des variables à PC2
+fviz_contrib(data_short_pca, choice = "var", axes = 2, top = 10)
+
+fviz_contrib(data_short_pca, choice = "var", axes = 1:2, top = 10) #La ligne en pointillé rouge, indique la contribution moyenne attendue. 
+```
+
+
+```{r}
+fviz_pca_var(data_short_pca,
+             title='Cercle de contribution',
+             col.var = "contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07")
+             )
+```
+
+```{r}
+#Projection des individus sur le plan factoriel pour vérification du travail de clustering
+
+data_short_clust$cluster <- as.factor(data_short_clust$cluster)
+
+fviz_pca_biplot (data_short_pca,
+                col.ind = data_short_clust$cluster, palette = "jco",
+                addEllipses = TRUE, label = "var",
+                col.var = "black", repel = TRUE,
+                legend.title = "Cluster")
+
+fviz_pca_ind(data_short_pca,
+             geom.ind = "point", # Montre les points seulement (mais pas le "text")
+             col.ind = data_short_clust$cluster, # colorer by groups
+             palette = "Set2",
+             addEllipses = TRUE, 
+             #ellipse.type = "confidence", # Ellipses de confiance, concentration si non spécifié
+             legend.title = "Clusters"
+             )
+```
+
+
+```{r}
+#Cos2: qualité de répresentation
+corrplot(data_short_pca_ind$cos2, is.corr=TRUE)
+fviz_cos2(data_short_pca, choice = "ind", axes = 1:2)
+
+
+# Contributions des individus à PC1
+fviz_contrib(data_short_pca, choice = "ind", axes = 1, top = 10)
+# Contributions des individus à PC2
+fviz_contrib(data_short_pca, choice = "ind", axes = 2, top = 10)
+fviz_contrib(data_short_pca, choice = "ind", axes = 1:2, top = 10) #La ligne en pointillé rouge, indique la contribution moyenne attendue. 
+
+```
+
+#ACP2
+
+```{r}
+#Liste des pays à cibler : cluster 4
+partition  = data_short_clust[data_short_clust$cluster == '4', ]
+partition = select(partition, subset = -c(8))
+partition
+```
+
+```{r}
+partition_pca = PCA(partition, graph = FALSE)
+partition_pca_var = get_pca_var(partition_pca)
+partition_pca_ind = get_pca_ind(partition_pca)
+```
+
+
+```{r}
+# Coordonnées
+head(partition_pca_var$coord)
+# Cos2: qualité de répresentation
+head(partition_pca_var$cos2)
+# Contributions aux composantes principales
+head(partition_pca_var$contrib)
+```
+
+```{r}
+# Coordonnées
+head(partition_pca_ind$coord)
+# Cos2: qualité de répresentation
+head(partition_pca_ind$cos2)
+# Contributions aux composantes principales
+head(partition_pca_ind$contrib)
+```
+
+
+
+```{r}
+fviz_eig(partition_pca, addlabels = TRUE, ylim = c(0, 90))
+```
+
+```{r}
+# Contributions des variables à PC1
+fviz_contrib(partition_pca, choice = "var", axes = 1, top = 10)
+# Contributions des variables à PC2
+fviz_contrib(partition_pca, choice = "var", axes = 2, top = 10)
+
+fviz_contrib(partition_pca, choice = "var", axes = 1:2, top = 10) #La ligne en pointillé rouge, indique la contribution moyenne attendue. 
+```
+
+```{r}
+corrplot(partition_pca_var$cos2, is.corr=TRUE)
+```
+
+
+```{r}
+fviz_pca_var(partition_pca,
+             title='Cercle de corrélation',
+             col.var = "cos2",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07")
+             )
+
+fviz_pca_var(partition_pca,
+             title='Cercle de contribution',
+             col.var = "contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07")
+             )
+```
+
+```{r}
+# Contributions des individus à PC1
+fviz_contrib(partition_pca, choice = "ind", axes = 1, top = 10)
+# Contributions des individus à PC2
+fviz_contrib(partition_pca, choice = "ind", axes = 2, top = 10)
+
+fviz_contrib(partition_pca, choice = "ind", axes = 1:2, top = 10) #La ligne en pointillé rouge, indique la contribution moyenne attendue. 
+
+corrplot(partition_pca_ind$cos2, is.corr=FALSE)
+```
+
+
+```{r}
+fviz_pca_biplot (partition_pca, 
+                 geom.ind = "point", 
+                addEllipses = TRUE, 
+                label = "var",
+                col.var = "black", 
+                repel = TRUE,
+                legend.title = "Pays")
+
+fviz_pca_ind(partition_pca,
+             geom.ind = "text", # Montre les "points" ou le "text"
+             addEllipses = TRUE, 
+             #ellipse.type = "confidence", # Ellipses de confiance, concentration si non spécifié
+             legend.title = "Pays"
+             )
+```
+
+
+```{r}
+#Test d'adéquation à une loi normale
+echantillon = data_short$var_pop_tot
+h <- hist(echantillon, breaks = 20, col = "skyblue2", xlab = 'Variation de la population, 2008-2013', ylab = 'effectif', main = '', freq = FALSE)
+x_norm = seq(min(echantillon), max(echantillon), length = 40)
+y_norm = dnorm(x_norm,mean(echantillon),sd(echantillon))
+y_norm <- y_norm * diff(h$mids[1:2]) * length(echantillon) 
+lines(x_norm, y_norm, col = "red", lwd=2)
+
+echantillon = data_short$PIB_cap_USD
+h <- hist(echantillon, breaks = 25, col = "skyblue2", xlab = 'PIB par tête en USD', ylab = 'effectif', main = '', freq = FALSE)
+x_norm = seq(min(echantillon), max(echantillon), length = 40)
+y_norm = dnorm(x_norm,mean(echantillon),sd(echantillon))
+y_norm <- y_norm * diff(h$mids[1:2]) * length(echantillon) 
+lines(x_norm, y_norm, col = "red", lwd=2)
+
+echantillon = data_short$dist_fr_km
+h <- hist(echantillon, breaks = 25, col = "skyblue2", xlab = 'Distance à la France en km', ylab = 'effectif', main = '', freq = FALSE)
+x_norm = seq(min(echantillon), max(echantillon), length = 40)
+y_norm = dnorm(x_norm,mean(echantillon),sd(echantillon))
+y_norm <- y_norm * diff(h$mids[1:2]) * length(echantillon) 
+lines(x_norm, y_norm, col = "red", lwd=2)
+
+echantillon = data_short$disp_alim_kcal_pers_j_totale
+h <- hist(echantillon, breaks = 25, col = "skyblue2", xlab = 'disponibilité alimentaire en kcal par personne jour', ylab = 'effectif', main = '', freq = FALSE)
+x_norm = seq(min(echantillon), max(echantillon), length = 40)
+y_norm = dnorm(x_norm,mean(echantillon),sd(echantillon))
+y_norm <- y_norm * diff(h$mids[1:2]) * length(echantillon) 
+lines(x_norm, y_norm, col = "red", lwd=2)
+
+echantillon = data_short$disp_alim_prot_g_pers_j_total
+h <- hist(echantillon, breaks = 25, col = "skyblue2", xlab = 'Dispo. alimentaire en g de protéines par personne jour', ylab = 'effectif', main = '', freq = FALSE)
+x_norm = seq(min(echantillon), max(echantillon), length = 40)
+y_norm = dnorm(x_norm,mean(echantillon),sd(echantillon))
+y_norm <- y_norm * diff(h$mids[1:2]) * length(echantillon) 
+lines(x_norm, y_norm, col = "red", lwd=2)
+
+echantillon = data_short$ratio_prot_anim_total
+h <- hist(echantillon, breaks = 25, col = "skyblue2", xlab = 'Ratio', ylab = 'effectif', main = '', freq = FALSE)
+x_norm = seq(min(echantillon), max(echantillon), length = 40)
+y_norm = dnorm(x_norm,mean(echantillon),sd(echantillon))
+y_norm <- y_norm * diff(h$mids[1:2]) * length(echantillon) 
+lines(x_norm, y_norm, col = "red", lwd=2)
+
+echantillon = data_short$tx_urb
+h <- hist(echantillon, breaks = 25, col = "skyblue2", xlab = "Taux d'urbanisation", ylab = "effectif", main = '', freq = FALSE)
+x_norm = seq(min(echantillon), max(echantillon), length = 40)
+y_norm = dnorm(x_norm,mean(echantillon),sd(echantillon))
+y_norm <- y_norm * diff(h$mids[1:2]) * length(echantillon) 
+lines(x_norm, y_norm, col = "red", lwd=2)
+
+```
+
+```{r}
+echantillon = data_short$PIB_cap_USD
+ks.test(echantillon,"pnorm", mean=mean(echantillon),sd=sd(echantillon))
+#H0 : distribution suit une loi normale -> p value supérieure au seuil de 5%, on ne rejette pas H0
+```
+
+```{r}
+echantillon = data_short$disp_alim_kcal_pers_j_totale
+ks.test(echantillon,"pnorm", mean=mean(echantillon),sd=sd(echantillon))
+```
+
+```{r}
+#Shapiro Wilke
+#Hypothèse nulle : l'échantillon suit une loi normale. Par conséquent si la p-value du test est significative, l'échantillon ne suit pas une loi normale.
+# ATTENTION : pas de shapiro wilk sur un échantillon supérieur à 50 (ici : 140) car trop sensible 
+
+
+library(tidyverse)
+library(ggpubr)
+library(rstatix)
+
+data_short %>% shapiro_test(disp_alim_kcal_pers_j_totale, PIB_cap_USD)
+
+```
+
+```{r}
+library("ggpubr")
+# Diagramme de densité
+ggdensity(data_short$disp_alim_kcal_pers_j_totale, fill = "lightgray")
+# QQ plot
+ggqqplot(data_short$disp_alim_kcal_pers_j_totale)
+```
+
+
+```{r}
+echantillon1 = subset(data_short_clust, data_short_clust$cluster == 3)$disp_alim_kcal_pers_j
+echantillon2 = subset(data_short_clust, data_short_clust$cluster == 4)$disp_alim_kcal_pers_j
+var.test(echantillon1, echantillon2) # egalité des variances
+t.test(echantillon1, echantillon2) #égalité des moyennes
+```
+
+
+```{r}
+#merge data_short_clust & dataset_short pour récupérer les ISO3
+
+data_short_clust_iso_2 = data_short_clust
+#data_short_clust_iso_2 <- tibble::rownames_to_column(data_short_clust_iso, "Zone")
+data_clust_iso_2 = merge(data_short_clust_iso, codes_iso_ok, by = "Zone")
+data_clust_iso_2$categ = 10
+
+#Interne
+data_clust_iso_2[16, 12] = 4
+data_clust_iso_2[46, 12] = 4
+
+#Présence
+data_clust_iso_2[5, 12] = 1
+data_clust_iso_2[11, 12] = 1
+data_clust_iso_2[28, 12] = 1
+data_clust_iso_2[37, 12] = 1
+data_clust_iso_2[45, 12] = 1
+data_clust_iso_2[62, 12] = 1
+data_clust_iso_2[63, 12] = 1
+data_clust_iso_2[64, 12] = 1
+data_clust_iso_2[65, 12] = 1
+data_clust_iso_2[78, 12] = 1
+data_clust_iso_2[95, 12] = 1
+data_clust_iso_2[104, 12] = 1
+data_clust_iso_2[121, 12] = 1
+data_clust_iso_2[122, 12] = 1
+data_clust_iso_2[133, 12] = 1
+data_clust_iso_2[5, 12] = 1
+
+#Ajouts
+data_clust_iso_2[135, 12] = 2
+data_clust_iso_2[108, 12] = 2
+data_clust_iso_2[40, 12] = 2
+
+#Potentiels
+data_clust_iso_2[4, 12] = 3
+data_clust_iso_2[84, 12] = 3
+data_clust_iso_2[130, 12] = 3
+data_clust_iso_2[132, 12] = 3
+data_clust_iso_2[107, 12] = 3
+data_clust_iso_2[79, 12] = 3
+
+
+carte_finale <- plot_ly(data_clust_iso_2, type='choropleth', locations=data_clust_iso$ISO, z=data_clust_iso_2$categ, text=data_clust_iso_2$Zone, color = data_clust_iso_2$categ )
+carte_finale
+```
+
